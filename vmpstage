@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# text for programs usage
+usage(){
+cat << EOF
+usage: $0 options
+
+This script stages a branch for a site or port on vmp. (-s or -p) and -b options are required.
+
+OPTIONS:
+   -b      [required] The branch to stage
+   -h      Show this message
+   -m      Boolean switch used to optionally run migrations
+   -p	   [required if no -s option] The port e.g. 8001, 8002, 8003, 8004 or 311
+   -s      [required if no -p option] The app site e.g. noisey, vice, thump, fightland, etc
+EOF
+}
+
+# boolean flags
+SFLAG=false
+BFLAG=false
+PFLAG=false
+MIGRATE=false
+
+# handle options
+while getopts :s:p:b:mh option 
+do
+	case $option
+	in
+		h)  usage; exit 1;;
+		s)  SFLAG=true; SITE=$OPTARG;;
+		p)  PFLAG=true; PORT=$OPTARG;;
+		b)  BFLAG=true; BRANCH=$OPTARG;;
+		m)  MIGRATE=true;;
+		\?) echo "Unknown option: -$OPTARG" >&2; exit 1;;
+		:)  echo "Missing option argument for -$OPTARG" >&2; exit 1;;
+		*)  echo "Unimplemented option: -$OPTARG" >&2; exit 1;;
+	esac
+done
+
+# exit if (-s and -p) or -b were not specified
+if [[ ("$SFLAG" = false && "$PFLAG" = false) || "$BFLAG" = false ]]
+then
+	echo "(-s OR -p) AND -b options are required" >&2
+	exit 1
+fi
+
+# build inital string of commands
+if [[ "$SFLAG" = true ]]
+then
+	CMDSTRING="cd /var/www/staging/$SITE"
+else
+	CMDSTRING="cd /var/www/ports/$PORT"
+fi
+
+CMDSTRING="$CMDSTRING && git fetch origin && git checkout $BRANCH && git pull origin $BRANCH"
+
+# append migration procedure if migrate switch was passed in
+if [[ "$MIGRATE" = true ]]
+then
+	CMDSTRING="$CMDSTRING && cd www/protected && echo 'y' | APP_ENVIRONMENT=staging ./yiic migrate"
+fi
+
+# append finishing commands
+CMDSTRING="$CMDSTRING && sudo service memcached restart"
+
+# ssh with commands
+ssh vmpstage $CMDSTRING
